@@ -25,6 +25,21 @@ keys =
   let oneOnly xs = if List.length xs == 1 then List.head xs else Nothing
   in Signal.map (Set.toList >> List.filterMap toKey >> oneOnly) Keyboard.keysDown
 
+type alias GameState
+  = { key : Maybe Key
+    , position : Int }
+
 main : Signal Element
 main =
-  Signal.map show keys
+  let state0 : GameState
+      state0 = { key = Nothing, position = 0 }
+
+      step : Maybe Key -> GameState -> GameState
+      step k st =
+        let pos = case k of
+                    Just Left -> st.position - 1
+                    Just Right -> st.position + 1
+                    _ -> st.position
+        in { st | key = k, position = pos }
+
+  in keys |> Signal.foldp step state0 |> Signal.map show
