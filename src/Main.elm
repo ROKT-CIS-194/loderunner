@@ -1,57 +1,79 @@
 module Main where
 
-import Char exposing (KeyCode)
+import Array exposing (Array)
+import Color
+import Dict exposing (Dict)
 import Graphics.Element exposing (Element, show)
-import Keyboard exposing (keysDown)
-import List
-import Set
-import Time exposing (Time)
+import Graphics.Collage as Gfx
 
-type Key = Up | Down | Left | Right | DigLeft | DigRight
-
-toKey : KeyCode -> Maybe Key
-toKey code =
-  case Char.toUpper (Char.fromCode code) of
-    'T' -> Just DigLeft
-    'Y' -> Just Up
-    'U' -> Just DigRight
-    'G' -> Just Left
-    'H' -> Just Down
-    'J' -> Just Right
-    _ -> Nothing
-
-type Input = InputKey (Maybe Key) | InputTime Time
-
-inputs : Signal Input
-inputs =
-  let currentKey = Signal.map (Set.toList >> List.filterMap toKey >> oneOnly) keysDown
-      oneOnly xs = if List.length xs == 1 then List.head xs else Nothing
-  in Signal.mergeMany [ Signal.map InputKey currentKey
-                      , Signal.map InputTime (Time.fps 15)
-                      ]
-
-type alias GameState
-  = { key      : Maybe Key
-    , position : Int
-    }
+import LodeRunner.Input as Inp
+import LodeRunner.Types exposing (..)
+import LodeRunner.View as View
 
 main : Signal Element
 main =
-  let initialState : GameState
-      initialState = { key = Nothing, position = 0 }
+  let blockSize = 40
+      fps = 30
 
-      view : GameState -> Element
-      view st = show { position = st.position }
+      step f inp (key, st) = case inp of
+        Inp.InputKey k  -> (k, st)
+        Inp.InputTime t -> (key, f key st)
 
-      step : Input -> GameState -> GameState
-      step inp st = case inp of
-        InputKey k ->
-          { st | key = k }
-        InputTime t ->
-          let pos = case st.key of
-                      Just Left  -> st.position - 1
-                      Just Right -> st.position + 1
-                      _          -> st.position
-          in { st | position = pos }
+  in Inp.inputs keyBindings fps
+       |> Signal.foldp (step stepper) (Nothing, initialState)
+       |> Signal.map (snd >> View.view viewSprite viewBlock blockSize)
 
-  in inputs |> Signal.foldp step initialState |> Signal.map view
+initialState : GameState
+initialState =
+  { player = { x = 0, y = 1, state = Standing }
+  , enemies = [ { x = 1, y = 1, state = Standing }
+              , { x = 2, y = 1, state = Standing }
+              ]
+  , dimensions = { w = 3, h = 3 }
+  , grid = Array.fromList [ Background, Wall, Background
+                          , Background, Wall, Background
+                          ,       Wall, Wall, Background
+                          ]
+  }
+
+keyBindings : Inp.KeyBindings
+keyBindings = Dict.fromList
+  [ ('J', MoveLeft)
+  , ('L', MoveRight)
+  , ('I', MoveUp)
+  , ('K', MoveDown)
+  , ('U', DigLeft)
+  , ('O', DigRight)
+  ]
+
+viewSprite : View.BlockSize -> Sprite -> Gfx.Form
+viewSprite blockSize s =
+  let sz = toFloat blockSize
+      actor r g b = Gfx.filled (Color.rgb r g b) (Gfx.rect (sz / 4) sz)
+  in case s of
+       Player _ -> actor 255 255 255
+       Enemy _  -> actor 255   0   0
+
+viewBlock : View.BlockSize -> Block -> Gfx.Form
+viewBlock blockSize b =
+  let sz = toFloat blockSize
+      box r g b = Gfx.filled (Color.rgb r g b) (Gfx.rect sz sz)
+  in case b of
+       Wall       -> box 200 200 255
+       Ladder     -> box   0 255 255
+       Background -> box   0   0   0
+
+stepper : Maybe Key -> GameState -> GameState
+stepper key state =
+  let player = state.player
+      x' = case key of
+        Just MoveLeft  -> state.player.x - 0.1
+        Just MoveRight -> state.player.x + 0.1
+        _              -> state.player.x
+      y' = case key of
+        Just MoveUp    -> state.player.y + 0.1
+        Just MoveDown  -> state.player.y - 0.1
+        _              -> state.player.y
+      p = { player | x = x', y = y' }
+      es = List.indexedMap (\i e -> { e | x = x' + toFloat i + 1 }) state.enemies
+  in { state | player = p, enemies = es }
