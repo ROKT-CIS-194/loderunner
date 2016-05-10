@@ -1,3 +1,5 @@
+module Main where
+
 import Char
 import Graphics.Element exposing (Element, show)
 import Keyboard
